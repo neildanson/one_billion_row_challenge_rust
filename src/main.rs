@@ -1,12 +1,14 @@
-use std::{collections::BTreeMap, fs::File, io::Read};
+use std::{collections::BTreeMap, fs::File, sync::Arc};
+
+use memmap::{Mmap, MmapOptions};
+use rayon::prelude::*;
 
 //write a function to open a text file and return a s a single string
-fn read_file(file_name: String) -> String {
+fn read_file(file_name: String) -> Option<Mmap> {
     let mut file = File::open(file_name).expect("Could not open file");
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .expect("Could not read file");
-    contents
+    let options = MmapOptions::new();
+    let mmap = unsafe { MmapOptions::new().map(&file).ok()? };
+    Some(mmap)
 }
 
 #[derive(Debug)]
@@ -69,35 +71,45 @@ fn read_line<'a>(contents: &'a str) -> Option<(&'a str, &'a str)> {
     return Some((line, &contents[index_end + 1..]));
 }
 
-fn run<'a>(contents: &'a str) -> BTreeMap<&'a str, Stats> {
-    let mut town_stats = BTreeMap::new();
-
-    let mut maybe_data = read_line(contents);
-    while let Some((line, rest)) = maybe_data {
-        let data = read_data(line);
-        match data {
-            Some(data) => {
-                let stats = town_stats
-                    .entry(data.town)
-                    .or_insert(Stats::new(data.measurement));
-                stats.update(data.measurement);
-            }
-            None => println!("Error"),
-        };
-        maybe_data = read_line(rest);
-    }
-    town_stats
+#[derive(Debug)]
+enum Token {
+    SemiColon(usize),
+    Eol(usize),
 }
-
+fn read_all<'a>(contents: Mmap) -> Vec<String> {
+    let data = &contents[..1_000_00];
+    data
+            .par_chunks(32768)
+            .enumerate()
+            .flat_map(|(i, bytes)| {
+                bytes.par_iter().enumerate().filter_map(move |(j,c)| match *c as char {
+                    '\n' => Some(Token::Eol((i+1) * j)),
+                    ';' => Some(Token::SemiColon((i+1) * j)),
+                    _ => None,
+                })
+            })
+            .collect::<Box<[Token]>>()
+            .par_windows(2)
+            .filter_map(|chunk| match chunk {
+                [Token::SemiColon(i), Token::Eol(j)] => Some((i+1,j+1)),
+                [Token::Eol(i), Token::SemiColon(j)] => Some((i+1,j+1)),
+                _ => None,
+            })
+            .map(|(i,j)| String::from_utf8(data[i..j].to_vec()).unwrap())
+            .collect()
+}
 fn main() {
     let file_name = String::from("C:\\Users\\neild\\source\\repos\\measurements.txt");
-    let start_time = std::time::Instant::now();
-    let contents = read_file(file_name);
 
-    let result = run(&contents);
+
+    let start_time = std::time::Instant::now();
+    let contents = read_file(file_name).unwrap();
+    let result = read_all(contents);
+    let result = result.iter().take(10).collect::<Vec<_>>();
+    //let result = run(&contents);
+    let end_time = std::time::Instant::now();
     println!("{:?}", result);
 
-    let end_time = std::time::Instant::now();
     let duration = end_time.duration_since(start_time);
     println!("{}", duration.as_millis());
 }
