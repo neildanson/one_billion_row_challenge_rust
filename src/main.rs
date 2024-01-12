@@ -1,4 +1,9 @@
-use std::{collections::{BTreeMap, HashMap}, fs::File, str, hash::RandomState};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs::File,
+    hash::RandomState,
+    str,
+};
 
 use memmap2::{Mmap, MmapOptions};
 use rayon::prelude::*;
@@ -62,39 +67,37 @@ impl std::fmt::Debug for Stats {
 fn read_data(contents: &str) -> Option<Data> {
     let (town, measurement) = contents.split_once(';')?;
     let measurement = measurement.parse().ok()?;
-    let data = Data {
-        town,
-        measurement,
-    };
+    let data = Data { town, measurement };
     Some(data)
 }
 
 fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
-
-    let result = bytes
+    bytes
         .par_split(|&b| b == b'\n')
         .filter_map(|line| str::from_utf8(line).ok())
-        .filter_map(|str| read_data(str))
-        .fold(|| HashMap::with_hasher(RandomState::default()), |mut map, data| {
-            let stats = map
-                .entry(data.town)
-                .or_insert_with(|| Stats::new(data.measurement));
-            stats.update(data.measurement);
-            map
-        })
+        .filter_map(read_data)
+        .fold(
+            || HashMap::with_hasher(RandomState::default()),
+            |mut map, data| {
+                let stats = map
+                    .entry(data.town)
+                    .or_insert_with(|| Stats::new(data.measurement));
+                stats.update(data.measurement);
+                map
+            },
+        )
         .reduce(
             || HashMap::with_hasher(RandomState::default()),
-            |mut map1, map2| {
+            |mut result, map2| {
                 for (key, value) in map2 {
-                    let stats = map1.entry(key).or_insert_with(|| Stats::new(value.min));
+                    let stats = result.entry(key).or_insert_with(|| Stats::new(value.min));
                     stats.merge(&value);
                 }
-                map1
+                result
             },
         )
         .into_iter()
-        .collect::<BTreeMap<_, _>>();
-        result
+        .collect::<BTreeMap<_, _>>()
 }
 fn main() {
     let file_name = String::from("..\\measurements.txt");
