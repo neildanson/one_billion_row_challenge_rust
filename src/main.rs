@@ -74,30 +74,24 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
     let result = bytes
         .par_split(|&b| b == b'\n')
         .map(|line| str::from_utf8(line).unwrap())
-        .collect::<Vec<_>>()
-        .par_chunks(32768)
-        .map(|strs| strs.iter().filter_map(|s| read_data(s)))
-        .map(|data| { 
-            let map = HashMap::with_hasher(RandomState::default());
-            data.into_iter().fold(map, |mut map, data| {
-                let stats = map
-                    .entry(data.town)
-                    .or_insert_with(|| Stats::new(data.measurement));
-                stats.update(data.measurement);
-                map
-            })
-        })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .fold(BTreeMap::new(), |mut map, mut other| {
-            for (key, value) in other.drain() {
-                let stats = map
-                    .entry(key)
-                    .or_insert_with(|| Stats::new(value.min));
-                stats.merge(&value);
-            }
+        .filter_map(|str| read_data(str))
+        .fold(|| BTreeMap::new(), |mut map, data| {
+            let stats = map
+                .entry(data.town)
+                .or_insert_with(|| Stats::new(data.measurement));
+            stats.update(data.measurement);
             map
-        });
+        })
+        .reduce(
+            || BTreeMap::new(),
+            |mut map1, map2| {
+                for (key, value) in map2 {
+                    let stats = map1.entry(key).or_insert_with(|| Stats::new(value.min));
+                    stats.merge(&value);
+                }
+                map1
+            },
+        );
         result
 }
 fn main() {
