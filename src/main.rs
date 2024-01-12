@@ -1,3 +1,4 @@
+#![feature(iter_collect_into)]
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
@@ -8,7 +9,6 @@ use std::{
 use memmap2::{Mmap, MmapOptions};
 use rayon::prelude::*;
 
-//write a function to open a text file and return a s a single string
 fn read_file(file_name: String) -> Option<Mmap> {
     let file = File::open(file_name).expect("Could not open file");
     let mmap = unsafe { MmapOptions::new().map(&file).ok()? };
@@ -25,7 +25,7 @@ struct Stats {
     min: f64,
     max: f64,
     total: f64,
-    count: f64,
+    count: i32,
 }
 
 impl Stats {
@@ -34,7 +34,7 @@ impl Stats {
             min: initial,
             max: initial,
             total: 0.0,
-            count: 0.0,
+            count: 0,
         }
     }
 
@@ -42,7 +42,7 @@ impl Stats {
         self.min = self.min.min(value);
         self.max = self.max.max(value);
         self.total += value;
-        self.count += 1.0;
+        self.count += 1;
     }
 
     fn merge(&mut self, other: &Stats) {
@@ -55,7 +55,7 @@ impl Stats {
 
 impl std::fmt::Debug for Stats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let average = self.total / self.count;
+        let average = self.total / (self.count as f64);
         write!(
             f,
             "min: {}, max: {}, average: {:.1}",
@@ -77,7 +77,7 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
         .filter_map(|line| str::from_utf8(line).ok())
         .filter_map(read_data)
         .fold(
-            || HashMap::with_hasher(RandomState::default()),
+            || HashMap::with_capacity_and_hasher(500, RandomState::default()),
             |mut map, data| {
                 let stats = map
                     .entry(data.town)
@@ -87,7 +87,7 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
             },
         )
         .reduce(
-            || HashMap::with_hasher(RandomState::default()),
+            || HashMap::with_capacity_and_hasher(1000, RandomState::default()),
             |mut result, map2| {
                 for (key, value) in map2 {
                     let stats = result.entry(key).or_insert_with(|| Stats::new(value.min));
@@ -101,11 +101,10 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
 }
 fn main() {
     let file_name = String::from("..\\measurements.txt");
-
     let start_time = std::time::Instant::now();
     let contents = read_file(file_name).unwrap();
     let result = read_all(&contents);
-    let result = result.iter().take(413).collect::<Vec<_>>();
+    let result :Vec<_> = result.iter().collect();
     let end_time = std::time::Instant::now();
     println!("{:?}", result);
 
