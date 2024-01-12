@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fs::File, str};
+use std::{collections::{BTreeMap, HashMap}, fs::File, str, hash::RandomState};
 
 use memmap2::{Mmap, MmapOptions};
 use rayon::prelude::*;
@@ -73,9 +73,9 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
 
     let result = bytes
         .par_split(|&b| b == b'\n')
-        .map(|line| str::from_utf8(line).unwrap())
+        .filter_map(|line| str::from_utf8(line).ok())
         .filter_map(|str| read_data(str))
-        .fold(|| BTreeMap::new(), |mut map, data| {
+        .fold(|| HashMap::with_hasher(RandomState::default()), |mut map, data| {
             let stats = map
                 .entry(data.town)
                 .or_insert_with(|| Stats::new(data.measurement));
@@ -83,7 +83,7 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
             map
         })
         .reduce(
-            || BTreeMap::new(),
+            || HashMap::with_hasher(RandomState::default()),
             |mut map1, map2| {
                 for (key, value) in map2 {
                     let stats = map1.entry(key).or_insert_with(|| Stats::new(value.min));
@@ -91,7 +91,9 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
                 }
                 map1
             },
-        );
+        )
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
         result
 }
 fn main() {
