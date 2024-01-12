@@ -102,7 +102,7 @@ fn main() {
     let start_time = std::time::Instant::now();
     let contents = read_file(file_name).unwrap();
     let result = read_all(&contents);
-    let result = result.iter().take(10).collect::<Vec<_>>();
+    let result = result.iter().take(413).collect::<Vec<_>>();
     let end_time = std::time::Instant::now();
     println!("{:?}", result);
 
