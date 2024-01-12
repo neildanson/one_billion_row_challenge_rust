@@ -1,4 +1,4 @@
-use std::{collections::{BTreeMap, HashMap}, fs::File, str, hash::RandomState};
+use std::{collections::BTreeMap, fs::File, str};
 
 use memmap2::{Mmap, MmapOptions};
 use rayon::prelude::*;
@@ -95,7 +95,7 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
         result
 }
 fn main() {
-    let file_name = String::from("C:\\Users\\neild\\source\\repos\\measurements.txt");
+    let file_name = String::from("..\\measurements.txt");
 
     let start_time = std::time::Instant::now();
     let contents = read_file(file_name).unwrap();
