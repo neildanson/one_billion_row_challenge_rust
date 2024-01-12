@@ -1,4 +1,4 @@
-use std::{collections::{BTreeMap, HashMap}, fs::File, str};
+use std::{collections::{BTreeMap, HashMap}, fs::File, str, hash::RandomState};
 
 use memmap2::{Mmap, MmapOptions};
 use rayon::prelude::*;
@@ -80,7 +80,7 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
         .par_chunks(32768)
         .map(|strs| strs.iter().filter_map(|s| read_data(s)))
         .map(|data| { 
-            let map = HashMap::new();
+            let map = HashMap::with_hasher(RandomState::default());
             data.into_iter().fold(map, |mut map, data| {
                 let stats = map
                     .entry(data.town)
