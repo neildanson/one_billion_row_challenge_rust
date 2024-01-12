@@ -53,7 +53,7 @@ impl std::fmt::Debug for Stats {
         let average = self.total / self.count;
         write!(
             f,
-            "min: {}, max: {}, average: {}",
+            "min: {}, max: {}, average: {:.1}",
             self.min, self.max, average
         )
     }
