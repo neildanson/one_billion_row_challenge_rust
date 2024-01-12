@@ -1,12 +1,11 @@
-use std::{collections::BTreeMap, fs::File, sync::Arc};
+use std::{collections::{BTreeMap, HashMap}, fs::File, str};
 
-use memmap::{Mmap, MmapOptions};
+use memmap2::{Mmap, MmapOptions};
 use rayon::prelude::*;
 
 //write a function to open a text file and return a s a single string
 fn read_file(file_name: String) -> Option<Mmap> {
-    let mut file = File::open(file_name).expect("Could not open file");
-    let options = MmapOptions::new();
+    let file = File::open(file_name).expect("Could not open file");
     let mmap = unsafe { MmapOptions::new().map(&file).ok()? };
     Some(mmap)
 }
@@ -40,6 +39,13 @@ impl Stats {
         self.total += value;
         self.count += 1.0;
     }
+
+    fn merge(&mut self, other: &Stats) {
+        self.min = self.min.min(other.min);
+        self.max = self.max.max(other.max);
+        self.total += other.total;
+        self.count += other.count;
+    }
 }
 
 impl std::fmt::Debug for Stats {
@@ -53,60 +59,56 @@ impl std::fmt::Debug for Stats {
     }
 }
 
-fn read_data<'a>(contents: &'a str) -> Option<Data<'a>> {
+fn read_data(contents: &str) -> Option<Data> {
     let index_semicolon = contents.find(';')?;
     let town = &contents[..index_semicolon];
     let measurement = &contents[index_semicolon + 1..];
     let measurement = measurement.parse().ok()?;
     let data = Data {
-        town: town,
-        measurement: measurement,
+        town,
+        measurement,
     };
-    return Some(data);
+    Some(data)
 }
 
-fn read_line<'a>(contents: &'a str) -> Option<(&'a str, &'a str)> {
-    let index_end = contents.find('\n')?;
-    let line = &contents[..index_end];
-    return Some((line, &contents[index_end + 1..]));
-}
+fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
 
-#[derive(Debug)]
-enum Token {
-    SemiColon(usize),
-    Eol(usize),
-}
-fn read_all<'a>(contents: Mmap) -> Vec<String> {
-    let data = &contents[..1_000_00];
-    data
-            .par_chunks(32768)
-            .enumerate()
-            .flat_map(|(i, bytes)| {
-                bytes.par_iter().enumerate().filter_map(move |(j,c)| match *c as char {
-                    '\n' => Some(Token::Eol((i+1) * j)),
-                    ';' => Some(Token::SemiColon((i+1) * j)),
-                    _ => None,
-                })
+    let result = bytes
+        .par_split(|&b| b == b'\n')
+        .map(|line| str::from_utf8(line).unwrap())
+        .collect::<Vec<_>>()
+        .par_chunks(32768)
+        .map(|strs| strs.iter().filter_map(|s| read_data(s)))
+        .map(|data| { 
+            let map = HashMap::new();
+            data.into_iter().fold(map, |mut map, data| {
+                let stats = map
+                    .entry(data.town)
+                    .or_insert_with(|| Stats::new(data.measurement));
+                stats.update(data.measurement);
+                map
             })
-            .collect::<Box<[Token]>>()
-            .par_windows(2)
-            .filter_map(|chunk| match chunk {
-                [Token::SemiColon(i), Token::Eol(j)] => Some((i+1,j+1)),
-                [Token::Eol(i), Token::SemiColon(j)] => Some((i+1,j+1)),
-                _ => None,
-            })
-            .map(|(i,j)| String::from_utf8(data[i..j].to_vec()).unwrap())
-            .collect()
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .fold(BTreeMap::new(), |mut map, mut other| {
+            for (key, value) in other.drain() {
+                let stats = map
+                    .entry(key)
+                    .or_insert_with(|| Stats::new(value.min));
+                stats.merge(&value);
+            }
+            map
+        });
+        result
 }
 fn main() {
     let file_name = String::from("C:\\Users\\neild\\source\\repos\\measurements.txt");
 
-
     let start_time = std::time::Instant::now();
     let contents = read_file(file_name).unwrap();
-    let result = read_all(contents);
+    let result = read_all(&contents);
     let result = result.iter().take(10).collect::<Vec<_>>();
-    //let result = run(&contents);
     let end_time = std::time::Instant::now();
     println!("{:?}", result);
 
