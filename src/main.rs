@@ -66,7 +66,7 @@ impl std::fmt::Debug for Stats {
 
 fn read_data(contents: &str) -> Option<Data> {
     let (town, measurement) = contents.split_once(';')?;
-    let measurement = measurement.parse().ok()?;
+    let measurement = fast_float::parse(measurement).ok()?;
     let data = Data { town, measurement };
     Some(data)
 }
