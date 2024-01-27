@@ -2,10 +2,10 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
-    hash::RandomState,
     str,
 };
 
+use fxhash::{FxBuildHasher, FxHasher};
 use memmap2::{Mmap, MmapOptions};
 use rayon::prelude::*;
 
@@ -72,12 +72,13 @@ fn read_data(contents: &str) -> Option<Data> {
 }
 
 fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
+    let mut result = BTreeMap::new();
     bytes
         .par_split(|&b| b == b'\n')
         .filter_map(|line| str::from_utf8(line).ok())
         .filter_map(read_data)
         .fold(
-            || HashMap::with_capacity_and_hasher(500, RandomState::default()),
+            || HashMap::with_capacity_and_hasher(500, FxBuildHasher::default()),
             |mut map, data| {
                 let stats = map
                     .entry(data.town)
@@ -87,7 +88,7 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
             },
         )
         .reduce(
-            || HashMap::with_capacity_and_hasher(1000, RandomState::default()),
+            || HashMap::with_capacity_and_hasher(1000, FxBuildHasher::default()),
             |mut result, map2| {
                 for (key, value) in map2 {
                     let stats = result.entry(key).or_insert_with(|| Stats::new(value.min));
@@ -97,7 +98,8 @@ fn read_all(bytes: &Mmap) -> BTreeMap<&str, Stats> {
             },
         )
         .into_iter()
-        .collect::<BTreeMap<_, _>>()
+        .collect_into(&mut result);
+        result
 }
 fn main() {
     let file_name = String::from("..\\measurements.txt");
